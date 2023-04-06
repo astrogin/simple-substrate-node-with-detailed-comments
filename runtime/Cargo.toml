@@ -3,6 +3,7 @@ name = "substrate-simple-runtime-with-comments"
 version = "1.0.0-dev"
 description = "well commented substrate simple runtime"
 license = "Unlicense"
+edition = "2021"
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
