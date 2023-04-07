@@ -87,7 +87,12 @@ pub use frame_support::{
         Weight,
     },
 };
-// TODO
+// The sp_api::impl_runtime_apis macro takes as input a list of API definitions, which specify the
+// names and types of the functions that should be available through the API. The macro generates
+// an implementation of the sp_api::Core trait that forwards calls to these functions to the corresponding functions in the runtime.
+//
+// Overall, this macro provides a convenient way to generate a default implementation of the runtime
+// API for a Substrate runtime, which can be customized as needed by implementing the sp_api::Core trait manually.
 use sp_api::impl_runtime_apis;
 use pallet_transaction_payment::{Multiplier};
 
@@ -109,11 +114,21 @@ pub use sp_runtime::{
         // A lookup implementation returning the AccountId from a MultiAddress.
         // https://docs.rs/sp-runtime/22.0.0/sp_runtime/traits/struct.AccountIdLookup.html
         AccountIdLookup,
-        //TODO
         Block as BlockT,
+        //is used to provide a default implementation of the one() method that returns a value of
+        // a particular type that implements the Clone trait. It is used in various parts of the
+        // runtime codebase, such as the FeeMultiplier type, which defines a multiplication factor for transaction fees.
+        //
+        // By default, one() returns a new instance of the type with all fields set to 1, but it
+        // can be overridden to provide a custom implementation for specific types.
+        One,
         //TODO
-        One
+        NumberFor
     },
+    // TODO
+    transaction_validity::{TransactionSource, TransactionValidity},
+    //TODO
+    ApplyExtrinsicResult,
     MultiSignature,
     // Generic implementations of Extrinsic/Header/Block.
     // https://docs.rs/sp-runtime/22.0.0/sp_runtime/generic/index.html
@@ -144,6 +159,13 @@ use sp_core::{
     crypto::KeyTypeId,
     OpaqueMetadata,
 };
+//TODO
+pub use frame_system::Call as SystemCall;
+pub use pallet_balances::Call as BalancesCall;
+pub use pallet_timestamp::Call as TimestampCall;
+//TODO
+#[cfg(feature = "std")]
+use sp_version::NativeVersion;
 
 // Converts a percent into Self. Equal to x / 100.
 // This can be created at compile time.
@@ -340,6 +362,12 @@ pub const VERSION: RuntimeVersion = RuntimeVersion {
     state_version: 1,
 };
 
+// The version information used to identify this runtime when compiled natively.
+#[cfg(feature = "std")]
+pub fn native_version() -> NativeVersion {
+    NativeVersion { runtime_version: VERSION, can_author_with: Default::default() }
+}
+
 impl frame_system::Config for Runtime {
     // The CallFilter trait is used to determine which extrinsics are allowed to be included in a block.
     // Therefore, BaseCallFilter: Contains<Self::RuntimeCall> means that the filter will only allow extrinsics
@@ -446,7 +474,7 @@ impl frame_system::Config for Runtime {
     // function that produces a 256-bit hash value.
     // Together, the Header type represents the metadata of a block in the Substrate blockchain, including its block number and hash value.
     type Header = generic::Header<BlockNumber, BlakeTwo256>;
-    // TODO
+
     type RuntimeEvent = RuntimeEvent;
     // Maximum number of block number to block hash mappings to keep (oldest pruned first).
     type BlockHashCount = BlockHashCount;
@@ -554,7 +582,6 @@ impl pallet_aura::Config for Runtime {
 }
 
 impl pallet_grandpa::Config for Runtime {
-    // TODO
     type RuntimeEvent = RuntimeEvent;
 
     // In this case, the KeyOwnerProof type is defined in the context of a runtime that has a
@@ -601,7 +628,7 @@ impl pallet_balances::Config for Runtime {
     // the blockchain. The DustRemoval type provides a way to configure this behavior, but in
     // this case, it is set to the unit type (), which indicates that dust removal is disabled.
     type DustRemoval = ();
-    // TODO
+
     type RuntimeEvent = RuntimeEvent;
     // This code defines a type alias named ExistentialDeposit which is equal to the constant
     // unsigned 128-bit integer value of EXISTENTIAL_DEPOSIT. EXISTENTIAL_DEPOSIT is a constant
@@ -717,26 +744,51 @@ impl pallet_sudo::Config for Runtime {
 
 impl pallet_randomness_collective_flip::Config for Runtime {}
 
-// TODO
 /// The address format for describing accounts.
+/// Overall, this definition allows for the creation of a runtime address type that can be used to
+/// represent the address of an account, which may have one or more sub-accounts associated with it.
 pub type Address = sp_runtime::MultiAddress<AccountId, ()>;
 /// Block header type as expected by this runtime.
 pub type Header = generic::Header<BlockNumber, BlakeTwo256>;
 /// Block type as expected by this runtime.
 pub type Block = generic::Block<Header, UncheckedExtrinsic>;
 /// The SignedExtension to the basic transaction logic.
+/// In the runtime context, SignedExtra is a type alias that defines a tuple of runtime module
+/// traits that will be used as the signed extension when creating a signed transaction.
 pub type SignedExtra = (
+    // CheckNonZeroSender: ensures that the sender's account has enough funds to pay for transaction fees
     frame_system::CheckNonZeroSender<Runtime>,
+    // CheckSpecVersion: verifies that the runtime version matches the version specified in the transaction.
     frame_system::CheckSpecVersion<Runtime>,
+    // CheckTxVersion: verifies that the transaction version is supported by the runtime.
     frame_system::CheckTxVersion<Runtime>,
+    // CheckGenesis: checks if the transaction is authorized based on the current genesis configuration.
     frame_system::CheckGenesis<Runtime>,
+    // CheckEra: verifies the era of the transaction.
     frame_system::CheckEra<Runtime>,
+    // CheckNonce: ensures that the nonce of the transaction is correct.
     frame_system::CheckNonce<Runtime>,
+    // CheckWeight: checks that the weight of the transaction is within the allowed bounds.
     frame_system::CheckWeight<Runtime>,
+    // ChargeTransactionPayment: determines the fee for the transaction and charges the sender's account accordingly.
     pallet_transaction_payment::ChargeTransactionPayment<Runtime>,
 );
 
-/// Unchecked extrinsic type as expected by this runtime.
+// TODO
+// The payload being signed in transactions.
+pub type SignedPayload = generic::SignedPayload<RuntimeCall, SignedExtra>;
+
+// Unchecked extrinsic type as expected by this runtime.
+
+// defined using the generic::UncheckedExtrinsic type, which is a type that represents an extrinsic
+// that has not yet been validated. The Address type is the type of the sender's account address,
+// while RuntimeCall is the type that represents the call to be executed. The Signature type
+// represents the signature of the transaction, while SignedExtra is a tuple of extra information
+// that is included with the transaction.
+//
+// By default, an extrinsic is unchecked, meaning it has not been validated to ensure it is a valid
+// transaction according to the runtime's rules. When an extrinsic is included in a block, it is
+// checked and verified to ensure it is a valid transaction.
 pub type UncheckedExtrinsic =
 generic::UncheckedExtrinsic<Address, RuntimeCall, Signature, SignedExtra>;
 
@@ -955,8 +1007,20 @@ construct_runtime!(
 	}
 );
 
-//TODO
-/// Executive: handles dispatch to the various modules.
+// Executive: handles dispatch to the various modules.
+// the Executive type is defined as an alias to the frame_executive::Executive struct template.
+// The Executive struct template takes the following type parameters:
+//
+// Runtime: The Substrate runtime.
+// Block: The Substrate block type, which contains the Header, Extrinsic, and BlockNumber types.
+// frame_system::ChainContext<Runtime>: A struct that implements the sp_runtime::traits::ChainContext
+//  trait for the given Runtime. This type is responsible for providing context information to the Executive.
+// Runtime: The Substrate runtime.
+// AllPalletsWithSystem: A struct that implements the frame_support::traits::AllPalletsWithSystem trait.
+//  This struct is used to provide a list of all the pallets used by the Substrate runtime, including the System pallet.
+//
+// The Executive struct template is used by the Substrate runtime to execute blocks. It is
+// responsible for executing the transactions in a block, updating the storage of the runtime, and emitting events.
 pub type Executive = frame_executive::Executive<
     Runtime,
     Block,
@@ -964,6 +1028,7 @@ pub type Executive = frame_executive::Executive<
     Runtime,
     AllPalletsWithSystem,
 >;
+
 impl_runtime_apis! {
     impl sp_api::Core<Block> for Runtime {
 		// version() -> RuntimeVersion: This function returns the current version of the runtime.
@@ -983,7 +1048,169 @@ impl_runtime_apis! {
 			Executive::initialize_block(header)
 		}
 	}
-    impl pallet_transaction_payment_rpc_runtime_api::TransactionPaymentApi<Block, Balance> for Runtime {
+
+    // This code is implementing the Metadata trait from the sp_api module for the Runtime struct,
+	// where Block is the block type used in the runtime.
+	// The Metadata trait provides a way to get the metadata of a runtime, which includes information about the modules
+	// and their storage items, the extrinsics supported by the runtime, and various other runtime-related information.
+	// This metadata is used by the Substrate framework to generate documentation and user interfaces for the runtime.
+	impl sp_api::Metadata<Block> for Runtime {
+		// metadata() -> OpaqueMetadata: This function returns the metadata of the runtime in an OpaqueMetadata format.
+		// It calls the metadata() function from the Runtime module, which returns a Metadata object. This object is
+		// then converted into an OpaqueMetadata object using the OpaqueMetadata::new() function.
+		// The OpaqueMetadata type is a wrapper around the Metadata type that is used to hide the implementation details of the
+		// metadata from the outside world. This is done to ensure that the metadata is not tampered with or modified in any way.
+		fn metadata() -> OpaqueMetadata {
+			OpaqueMetadata::new(Runtime::metadata().into())
+		}
+	}
+
+	// This code is implementing the BlockBuilder trait from the sp_block_builder module for the Runtime struct,
+	// where Block is the block type used in the runtime.
+	// The BlockBuilder trait is one of the core traits in the Substrate blockchain development framework and defines
+	// the behavior of a block builder. It provides functions for applying extrinsics, finalizing a block, creating
+	// inherent extrinsics, and checking inherent extrinsics.
+	impl sp_block_builder::BlockBuilder<Block> for Runtime {
+		// This function takes an extrinsic as input and applies it to the current block.
+		// It calls the apply_extrinsic() function from the Executive module, which is responsible for
+		// executing a single extrinsic and updating the state accordingly.
+		fn apply_extrinsic(extrinsic: <Block as BlockT>::Extrinsic) -> ApplyExtrinsicResult {
+			Executive::apply_extrinsic(extrinsic)
+		}
+
+		// This function finalizes the current block and returns its header. It calls the finalize_block()
+		// function from the Executive module, which is responsible for finalizing the state changes made by
+		// the extrinsics in the block and creating a new block header.
+		fn finalize_block() -> <Block as BlockT>::Header {
+			Executive::finalize_block()
+		}
+		// This function takes an InherentData object as input and creates a vector of inherent extrinsics for
+		// the current block. It calls the create_extrinsics() function from the InherentData object, which
+		// creates a vector of inherent extrinsics based on the inherent data.
+		fn inherent_extrinsics(data: sp_inherents::InherentData) -> Vec<<Block as BlockT>::Extrinsic> {
+			data.create_extrinsics()
+		}
+		// This function checks the inherent extrinsics for the current block. It takes the current block and an
+		// InherentData object as inputs and calls the check_extrinsics() function from the InherentData object,
+		// which checks the inherent extrinsics against the current block and returns a CheckInherentsResult.
+		fn check_inherents(
+			block: Block,
+			data: sp_inherents::InherentData,
+		) -> sp_inherents::CheckInherentsResult {
+			data.check_extrinsics(&block)
+		}
+	}
+
+	// This code is implementing the sp_transaction_pool::runtime_api::TaggedTransactionQueue trait for the Runtime struct.
+	// The TaggedTransactionQueue trait provides an interface for validating transactions and adding them to the
+	// transaction pool in the runtime.
+	// In this implementation, the TaggedTransactionQueue trait is being implemented for the Runtime struct, which
+	// means that it defines the interface for validating transactions and adding them to the transaction pool in the runtime.
+	impl sp_transaction_pool::runtime_api::TaggedTransactionQueue<Block> for Runtime {
+		// This code is implementing the sp_transaction_pool::runtime_api::TaggedTransactionQueue trait for the Runtime struct.
+		// The TaggedTransactionQueue trait provides an interface for validating transactions and adding them to
+		// the transaction pool in the runtime.
+		// In this implementation, the TaggedTransactionQueue trait is being implemented for the Runtime struct,
+		// which means that it defines the interface for validating transactions and adding them to the transaction pool in the runtime.
+		fn validate_transaction(
+			source: TransactionSource,
+			tx: <Block as BlockT>::Extrinsic,
+			block_hash: <Block as BlockT>::Hash,
+		) -> TransactionValidity {
+			Executive::validate_transaction(source, tx, block_hash)
+		}
+	}
+	// This code is implementing the sp_offchain::OffchainWorkerApi trait for the Runtime struct.
+	// The OffchainWorkerApi trait provides an interface for running off-chain worker functions in the runtime.
+	impl sp_offchain::OffchainWorkerApi<Block> for Runtime {
+		// This method takes in a reference to the Header of a block, which is used to get the current state of the blockchain.
+		// The method then passes the Header reference to the Executive::offchain_worker function, which is responsible
+		// for running the off-chain worker logic.
+		fn offchain_worker(header: &<Block as BlockT>::Header) {
+			Executive::offchain_worker(header)
+		}
+	}
+
+	// This code is implementing the sp_consensus_aura::AuraApi trait for the Runtime struct. The AuraApi trait provides an
+	// interface for the Aura consensus engine in the Substrate blockchain development framework.
+	// In this implementation, the AuraApi trait is being implemented for the Runtime struct, which means that it defines the
+	// interface for the Aura consensus engine in the runtime.
+	impl sp_consensus_aura::AuraApi<Block, AuraId> for Runtime {
+		// This method returns the slot duration used by the Aura consensus engine as a SlotDuration type.
+		fn slot_duration() -> sp_consensus_aura::SlotDuration {
+			sp_consensus_aura::SlotDuration::from_millis(Aura::slot_duration())
+		}
+
+		// This method returns the set of Aura authorities as a Vec of AuraId types.
+		fn authorities() -> Vec<AuraId> {
+			Aura::authorities().into_inner()
+		}
+	}
+
+	// This code is implementing the sp_session::SessionKeys trait for the Runtime struct. The SessionKeys trait provides an interface
+	// for generating and decoding session keys, which are used in the consensus mechanism to validate and produce blocks.
+	impl sp_session::SessionKeys<Block> for Runtime {
+		// This method generates a new set of session keys based on an optional seed value, and returns the keys as a Vec of bytes.
+		fn generate_session_keys(seed: Option<Vec<u8>>) -> Vec<u8> {
+			opaque::SessionKeys::generate(seed)
+		}
+
+		// This method decodes a set of encoded session keys and returns them as a Vec of tuples,
+		// where each tuple contains a public key as a Vec of bytes and a KeyTypeId identifier.
+		fn decode_session_keys(
+			encoded: Vec<u8>,
+		) -> Option<Vec<(Vec<u8>, KeyTypeId)>> {
+			opaque::SessionKeys::decode_into_raw_public_keys(&encoded)
+		}
+	}
+
+	// This code provides implementation for the GrandpaApi trait from the fg_primitives crate for the Runtime module.
+	impl fg_primitives::GrandpaApi<Block> for Runtime {
+		// function returns the current set of Grandpa authorities.
+		fn grandpa_authorities() -> GrandpaAuthorityList {
+			Grandpa::grandpa_authorities()
+		}
+
+		// function returns the identifier for the current authority set.
+		fn current_set_id() -> fg_primitives::SetId {
+			Grandpa::current_set_id()
+		}
+
+		// function submits a report of an equivocation to the Grandpa authorities. In this implementation, it always returns None.
+		fn submit_report_equivocation_unsigned_extrinsic(
+			_equivocation_proof: fg_primitives::EquivocationProof<
+				<Block as BlockT>::Hash,
+				NumberFor<Block>,
+			>,
+			_key_owner_proof: fg_primitives::OpaqueKeyOwnershipProof,
+		) -> Option<()> {
+			None
+		}
+
+		// function generates a key ownership proof for the specified authority and set identifier.
+		fn generate_key_ownership_proof(
+			_set_id: fg_primitives::SetId,
+			_authority_id: GrandpaId,
+		) -> Option<fg_primitives::OpaqueKeyOwnershipProof> {
+			// NOTE: this is the only implementation possible since we've
+			// defined our key owner proof type as a bottom type (i.e. a type
+			// with no values).
+			None
+		}
+	}
+
+	// This code provides an implementation of the AccountNonceApi trait for the runtime. This trait is part
+	//  of the frame_system_rpc_runtime_api module and is used to expose an API to query the account nonce for a given account ID.
+	impl frame_system_rpc_runtime_api::AccountNonceApi<Block, AccountId, Index> for Runtime {
+		// In this implementation, the account_nonce function takes an AccountId parameter and returns
+		// the account nonce (of type Index) for that account. The implementation simply forwards the call
+		// to the System module, which provides the functionality to manage account nonces in the runtime.
+		fn account_nonce(account: AccountId) -> Index {
+			System::account_nonce(account)
+		}
+	}
+
+	impl pallet_transaction_payment_rpc_runtime_api::TransactionPaymentApi<Block, Balance> for Runtime {
 		// The query_info method takes an extrinsic and a length and returns a RuntimeDispatchInfo struct containing
 		// information about the expected dispatch fee for the extrinsic, the weight of the extrinsic, and the class of the extrinsic.
 		fn query_info(
@@ -1002,5 +1229,24 @@ impl_runtime_apis! {
 		}
 		// Both methods are implemented using the TransactionPayment pallet, which handles calculating the
 		// dispatch fee and transaction fee for extrinsics.
+	}
+
+	// The TransactionPaymentCallApi trait defines two methods query_call_info and query_call_fee_details which
+	// are used to query the expected dispatch info and fee details of a runtime call with the specified parameters.
+	impl pallet_transaction_payment_rpc_runtime_api::TransactionPaymentCallApi<Block, Balance, RuntimeCall>
+		for Runtime
+	{
+		fn query_call_info(
+			call: RuntimeCall,
+			len: u32,
+		) -> pallet_transaction_payment::RuntimeDispatchInfo<Balance> {
+			TransactionPayment::query_call_info(call, len)
+		}
+		fn query_call_fee_details(
+			call: RuntimeCall,
+			len: u32,
+		) -> pallet_transaction_payment::FeeDetails<Balance> {
+			TransactionPayment::query_call_fee_details(call, len)
+		}
 	}
 }
