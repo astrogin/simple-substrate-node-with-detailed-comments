@@ -201,7 +201,14 @@ pub fn run() -> sc_cli::Result<()> {
             let runner = cli.create_runner(cmd)?;
             runner.sync_run(|config| cmd.run::<Block>(&config))
         },
+        // Run node by default
         None => {
+            // It create a Runner with config and runtime
+            // Runtime: It creates a multi-threaded runtime using the tokio::runtime::Builder and enables all
+            // available features by calling enable_all() (Enables both I/O and time drivers.). It also registers two callbacks
+            // using on_thread_start() and on_thread_stop(). These callbacks increment and
+            // decrement the TOKIO_THREADS_ALIVE and TOKIO_THREADS_TOTAL Prometheus metrics,
+            // respectively. These metrics track the number of active and total Tokio threads in the node.
             let runner = cli.create_runner(&cli.run)?;
             runner.run_node_until_exit(|config| async move {
                 service::new_full(config).map_err(sc_cli::Error::Service)
