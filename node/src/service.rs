@@ -31,8 +31,27 @@ impl sc_executor::NativeExecutionDispatch for ExecutorDispatch {
 	}
 }
 
+// In summary, this code defines a type alias called FullClient that implements the
+// sc_service::TFullClient trait with three generic type parameters: Block, RuntimeApi,
+// and NativeElseWasmExecutor<ExecutorDispatch>. The FullClient type is marked as pub(crate),
+// meaning that it is visible within the current crate but not outside of it.
 pub(crate) type FullClient =
-	sc_service::TFullClient<Block, RuntimeApi, NativeElseWasmExecutor<ExecutorDispatch>>;
+	sc_service::TFullClient<
+		// This is a type that represents the blocks in the Substrate chain. The Block type is
+		// generic and can be defined by the user.
+		Block,
+		// This is a type that represents the Substrate runtime API. The RuntimeApi type is also
+		// generic and can be defined by the user.
+		RuntimeApi,
+		// This is a type that represents the Substrate executor. The NativeElseWasmExecutor is
+		// an executor that can run both native and WASM code, while ExecutorDispatch is a
+		// dispatch object that is used to determine which executor to use for a given block.
+		NativeElseWasmExecutor<ExecutorDispatch>
+	>;
+// The backend is a component of a Substrate node that provides access to the blockchain data
+// storage and retrieval functionalities. It is responsible for managing the storage of blocks
+// and other data structures in the node's database, as well as providing access to that data
+// to other components of the node, such as the client and the runtime.
 type FullBackend = sc_service::TFullBackend<Block>;
 type FullSelectChain = sc_consensus::LongestChain<FullBackend, Block>;
 
@@ -62,6 +81,10 @@ pub fn new_partial(
 		return Err(ServiceError::Other("Remote Keystores are not supported.".into()))
 	}
 
+	// telemetry is used to collect and report various metrics related to the node's performance
+	// and usage. This includes data such as block times, transaction throughput, storage usage,
+	// and more. This information can be used to monitor the health of the node, identify potential
+	// bottlenecks or issues, and make improvements to the node's configuration and performance.
 	let telemetry = config
 		.telemetry_endpoints
 		.clone()
@@ -73,6 +96,26 @@ pub fn new_partial(
 		})
 		.transpose()?;
 
+	// The NativeElseWasmExecutor is a type that is part of the sc_executor crate, and is used
+	// to create an executor that can run both native code and WebAssembly code. In this
+	// code, a new instance of NativeElseWasmExecutor is created, with the following arguments:
+	// config.wasm_method: specifies the method that should be used to execute the WebAssembly code.
+	// 	This can be set to either Compiled or Interpreted, depending on whether the WebAssembly code
+	// 	should be compiled to native code or interpreted at runtime, respectively.
+	// config.default_heap_pages: specifies the default number of pages to allocate for the heap when executing WebAssembly code.
+	// config.max_runtime_instances: specifies the maximum number of runtime instances that can be created at any given time.
+	// config.runtime_cache_size: specifies the size of the runtime cache.
+	//
+	// In a Substrate node, the runtime code is executed within a separate task managed by the
+	// Tokio runtime. When a new block is received, for example, the Tokio runtime will spawn a
+	// new task to validate that block. This task will use the executor to execute the runtime code
+	// for the block, which may include executing transactions, updating state, and more. Once
+	// the task is complete, the result is returned to the Tokio runtime, which can then continue processing the block.
+	//
+	// Overall, the combination of the NativeElseWasmExecutor and the Tokio runtime provides a
+	// flexible and efficient way to execute runtime code in a Substrate node. The executor
+	// itself is responsible for executing the code, while the Tokio runtime provides a scalable
+	// and asynchronous framework for managing tasks and coordinating their execution.
 	let executor = NativeElseWasmExecutor::<ExecutorDispatch>::new(
 		config.wasm_method,
 		config.default_heap_pages,
@@ -80,7 +123,13 @@ pub fn new_partial(
 		config.runtime_cache_size,
 	);
 
-	let (client, backend, keystore_container, task_manager) =
+	// create backend-client (create DBs or connect if exists)
+	let (
+		client,
+		backend,
+		keystore_container,
+		task_manager
+	) =
 		sc_service::new_full_parts::<Block, RuntimeApi, _>(
 			config,
 			telemetry.as_ref().map(|(_, telemetry)| telemetry.handle()),
@@ -167,6 +216,8 @@ pub fn new_full(mut config: Configuration) -> Result<TaskManager, ServiceError> 
 		other: (block_import, grandpa_link, mut telemetry),
 	} = new_partial(&config)?;
 
+	// In summary, this code snippet checks if a remote keystore is configured for the Substrate node,
+	// sets it up if it is, and returns an error if the setup fails.
 	if let Some(url) = &config.keystore_remote {
 		match remote_keystore(url) {
 			Ok(k) => keystore_container.set_remote_keystore(k),
