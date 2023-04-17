@@ -35,6 +35,19 @@ impl sc_executor::NativeExecutionDispatch for ExecutorDispatch {
 // sc_service::TFullClient trait with three generic type parameters: Block, RuntimeApi,
 // and NativeElseWasmExecutor<ExecutorDispatch>. The FullClient type is marked as pub(crate),
 // meaning that it is visible within the current crate but not outside of it.
+//
+// In Substrate, TFullClient is a type alias for a struct that provides access to the full client
+// implementation of a Substrate node. It combines several components of the node, such as the
+// client itself, the block import mechanism, the transaction pool, the keystore container, and more, into a single struct.
+//
+// By using TFullClient, developers can easily access all the functionality of a Substrate node
+// and build applications that interact with the blockchain. For example, they can use the
+// client to submit transactions to the network, query the state of the blockchain, and manage
+// accounts and keys. They can also use the block import mechanism to synchronize the local
+// node with the rest of the network, and the transaction pool to manage pending transactions.
+//
+// Overall, TFullClient is a key component of a Substrate node, and provides a powerful and
+// flexible interface for building decentralized applications on top of the Substrate framework.
 pub(crate) type FullClient =
 	sc_service::TFullClient<
 		// This is a type that represents the blocks in the Substrate chain. The Block type is
@@ -123,7 +136,39 @@ pub fn new_partial(
 		config.runtime_cache_size,
 	);
 
+	// client
+	//  - off-chain operations/extensions
+	//  - The code_substitutes configuration in a Substrate chain spec file allows for swapping
+	// 		out the runtime code of the blockchain at specific block heights or block hashes.
+	// 		This can be useful for deploying updates to the blockchain runtime without having to
+	// 		perform a hard fork. By specifying a code substitute for a specific block height or
+	// 		block hash, nodes that reach that block will start using the new runtime code instead
+	// 		of the original code. This feature can be used to implement protocol upgrades, bug
+	// 		fixes, or new features in a more seamless and gradual way.
+	//
 	// create backend-client (create DBs or connect if exists)
+	//
+	// KeystoreContainer is used to manage cryptographic keys and signing operations.
+	// The KeystoreContainer is a container for Keystore instances, which represent individual
+	// key stores that hold keys for signing transactions. The KeystoreContainer allows the node
+	// to access keys stored in local files or in remote locations via RPC. It provides an
+	// abstraction layer for accessing and managing keys, and ensures that only authorized
+	// entities are able to access the keys. The KeystoreContainer is used throughout the
+	// Substrate node to sign transactions, validate signatures, and manage keys for various
+	// purposes. For example, it is used by the transaction pool to validate transactions and
+	// by the consensus engine to sign block proposals.
+	//
+	// The task_manager in a Substrate node is responsible for managing asynchronous tasks that
+	// are spawned by the node. These tasks can include things like network connections,
+	// background processing, and other tasks that are required to keep the node running.
+	// The task_manager is an instance of the TaskManager struct provided by the sc_service
+	// crate. It provides a simple interface for spawning and managing tasks, and also
+	// provides methods for graceful shutdown of the tasks when the node is shutting down.
+	// In a Substrate node, the task_manager is used to manage a variety of tasks, including:
+	// 	Network connections and communication with other nodes in the network
+	// 	Background processing tasks, such as syncing the blockchain and validating transactions
+	// 	Handling incoming RPC requests and other external events
+	// 	Various other tasks required to keep the node running
 	let (
 		client,
 		backend,
@@ -135,15 +180,38 @@ pub fn new_partial(
 			telemetry.as_ref().map(|(_, telemetry)| telemetry.handle()),
 			executor,
 		)?;
+
 	let client = Arc::new(client);
 
+	// run telemetry in thread
 	let telemetry = telemetry.map(|(worker, telemetry)| {
 		task_manager.spawn_handle().spawn("telemetry", None, worker.run());
 		telemetry
 	});
 
+	// In the context of a Substrate node, this code creates a new instance of the LongestChain
+	// struct, which is used as the chain selection strategy for the consensus engine. The
+	// LongestChain struct is provided by the sc_consensus crate and implements the ChainSelector
+	// trait, which defines the logic for selecting the "best" chain in the blockchain based on chain length.
+	// The LongestChain strategy selects the chain with the most blocks as the "best" chain, which
+	// is a common approach used in many blockchain systems. This strategy works well for
+	// blockchain networks where the probability of chain splits or forks is low, but can be
+	// problematic in networks where forks are common or occur frequently.
+	// The backend.clone() parameter passed to the LongestChain::new() method call is an
+	// instance of the Backend trait, which provides the interface for reading and writing
+	// data to and from the Substrate node's database backend. By passing in the backend
+	// instance, the LongestChain struct is able to query the database to determine the length of
+	// each chain and select the "best" one.
 	let select_chain = sc_consensus::LongestChain::new(backend.clone());
 
+	// the code creates a new transaction pool using the BasicPool::new_full method. The transaction
+	// pool is responsible for managing transactions and ensuring their inclusion in blocks.
+	// The method takes several arguments:
+	// config.transaction_pool.clone() - this is a configuration object for the transaction pool, which is cloned to create the new instance.
+	// config.role.is_authority().into() - this determines whether the node is an authority node or not, and is used to configure certain aspects of the transaction pool's behavior.
+	// config.prometheus_registry() - this is a Prometheus metrics registry used to track the transaction pool's performance.
+	// task_manager.spawn_essential_handle() - this is a handle to the task manager, which is used to spawn new tasks within the Substrate runtime.
+	// client.clone() - this is a handle to the Substrate client, which is used by the transaction pool to communicate with the rest of the node.
 	let transaction_pool = sc_transaction_pool::BasicPool::new_full(
 		config.transaction_pool.clone(),
 		config.role.is_authority().into(),
@@ -152,6 +220,18 @@ pub fn new_partial(
 		client.clone(),
 	);
 
+	// The Grandpa block import is responsible for importing new blocks from the network and
+	// validating them before they are added to the chain.
+	//
+	// The block_import function takes several arguments including client, which is the
+	// Substrate client instance, select_chain, which is the LongestChain instance used
+	// for selecting the best chain, and telemetry, which is an optional telemetry handle
+	// used for monitoring the Grandpa module's performance.
+	//
+	// The block_import function returns a tuple containing the grandpa_block_import and
+	// grandpa_link. The grandpa_block_import is an instance of sc_finality_grandpa::BlockImport,
+	// which is responsible for importing and validating new blocks. The grandpa_link is an
+	// instance of sc_finality_grandpa::Link, which is used to interact with other Grandpa nodes on the network.
 	let (grandpa_block_import, grandpa_link) = sc_finality_grandpa::block_import(
 		client.clone(),
 		&(client.clone() as Arc<_>),
@@ -161,11 +241,49 @@ pub fn new_partial(
 
 	let slot_duration = sc_consensus_aura::slot_duration(&*client)?;
 
+	// This code is used to create an import queue for the Aura consensus engine, which is one
+	// of the consensus engines available in the Substrate blockchain framework.
+	//
+	// The import queue is responsible for importing new blocks into the chain by validating
+	// them and applying any necessary changes to the blockchain state. The Aura import queue
+	// is designed specifically for the Aura consensus algorithm, which uses a deterministic
+	// algorithm to choose block producers and has a fixed block time.
 	let import_queue =
 		sc_consensus_aura::import_queue::<AuraPair, _, _, _, _, _>(ImportQueueParams {
+			// block_import: A block import instance that is used to import blocks into the
+			// blockchain. In this case, it is the grandpa_block_import instance, which is
+			// used by the Grandpa finality algorithm to import finalized blocks.
 			block_import: grandpa_block_import.clone(),
+			// justification_import: A justification import instance that is used to
+			// import justification data, which is used to finalize blocks. In this case,
+			// it is a clone of the grandpa_block_import instance, which means that justification
+			// data is imported in the same way as regular blocks.
+			//
+			// Justification data in a blockchain refers to the proof of the finality of a
+			// block. It is used to prove that a block has been finalized by a supermajority
+			// of the validators in the network, meaning that it cannot be reverted without a
+			// significant portion of the validators agreeing to revert it.
+			//
+			// Justification data can be used for various purposes, such as:
+			//
+			// Light client verification: Justification data can be used by light clients to
+			// verify that a block has been finalized without downloading the entire blockchain.
+			//
+			// Fork choice: Justification data can be used by nodes to choose which chain
+			// to follow in the case of a fork.
+			//
+			// Security: Justification data provides a security guarantee that a block has been
+			// finalized by a supermajority of validators, which makes it much harder to revert.
+			//
+			// For example, in the Polkadot network, justification data is used to guarantee the
+			// finality of relay chain blocks, which contain the finality proofs of parachain
+			// blocks. This allows parachains to trust that their blocks have been finalized and are secure.
 			justification_import: Some(Box::new(grandpa_block_import.clone())),
+			// client: A reference to the Substrate client that is used to interact with the network.
 			client: client.clone(),
+			// create_inherent_data_providers: A closure that creates the inherent data
+			// providers for new blocks. In this case, it creates an inherent data provider
+			// for the current timestamp and a slot duration.
 			create_inherent_data_providers: move |_, ()| async move {
 				let timestamp = sp_timestamp::InherentDataProvider::from_system_time();
 
@@ -177,10 +295,18 @@ pub fn new_partial(
 
 				Ok((slot, timestamp))
 			},
+			// spawner: A handle to the task spawner that is used to spawn new tasks.
 			spawner: &task_manager.spawn_essential_handle(),
+			// registry: A Prometheus registry that is used to store metrics for the import queue.
 			registry: config.prometheus_registry(),
+			// check_for_equivocation: A flag that determines whether the import queue should
+			// check for equivocation, which is when a block producer creates multiple conflicting blocks.
 			check_for_equivocation: Default::default(),
+			// telemetry: A handle to the telemetry worker that is used to report metrics about the import queue.
 			telemetry: telemetry.as_ref().map(|x| x.handle()),
+			// compatibility_mode: A flag that determines whether the import queue
+			// should be run in compatibility mode, which is used when upgrading a
+			// blockchain from a previous version of Substrate.
 			compatibility_mode: Default::default(),
 		})?;
 
@@ -228,21 +354,41 @@ pub fn new_full(mut config: Configuration) -> Result<TaskManager, ServiceError> 
 				))),
 		};
 	}
+	// The resulting grandpa_protocol_name is a human-readable string that represents the
+	// Grandpa protocol's name for the given chain. This name is used for reporting and logging purposes.
 	let grandpa_protocol_name = sc_finality_grandpa::protocol_standard_name(
 		&client.block_hash(0).ok().flatten().expect("Genesis block exists; qed"),
 		&config.chain_spec,
 	);
 
+	// the extra_sets field is being used to add a new Grandpa peers set configuration to the
+	// network's extra_sets array. This configuration is based on the grandpa_protocol_name,
+	// which is the name of the Grandpa protocol standard used in the network.
 	config
 		.network
 		.extra_sets
 		.push(sc_finality_grandpa::grandpa_peers_set_config(grandpa_protocol_name.clone()));
+
+	// This code is creating a new NetworkProvider instance that will be used to provide the
+	// warp proof data to the grandpa finality module.
+	//
+	// The NetworkProvider will be wrapped in an Arc and used by the grandpa finality
+	// module to fetch warp proof data during the finality process.
 	let warp_sync = Arc::new(sc_finality_grandpa::warp_proof::NetworkProvider::new(
 		backend.clone(),
+		// grandpa_link.shared_authority_set().clone(): This is the shared authority set used by
+		// the grandpa finality module. It provides the network provider with access to the
+		// grandpa authority set.
 		grandpa_link.shared_authority_set().clone(),
 		Vec::default(),
 	));
 
+	// This code is used to build the network configuration for a Substrate node. It
+	// calls the build_network function provided by the sc_service crate with a BuildNetworkParams struct.
+	// The build_network function returns a tuple containing the network object, which
+	// represents the P2P network, the system_rpc_tx object, which is used for sending
+	// system RPC messages, the tx_handler_controller, which is used to control the transaction
+	// handler, and the network_starter, which is a future that starts the network.
 	let (network, system_rpc_tx, tx_handler_controller, network_starter) =
 		sc_service::build_network(sc_service::BuildNetworkParams {
 			config: &config,
@@ -250,10 +396,28 @@ pub fn new_full(mut config: Configuration) -> Result<TaskManager, ServiceError> 
 			transaction_pool: transaction_pool.clone(),
 			spawn_handle: task_manager.spawn_handle(),
 			import_queue,
+			// The block_announce_validator_builder field is an optional builder for a
+			// validator that is used to validate incoming block announcements. If not
+			// specified, the default validator will be used.
 			block_announce_validator_builder: None,
+			// The warp_sync field is an optional parameter for the network provider, which
+			// provides the ability to do fast syncing of the blockchain using GRANDPA finality proofs.
 			warp_sync: Some(warp_sync),
 		})?;
 
+	// offchain workers are used to perform tasks off the blockchain network. They can be used
+	// for tasks such as fetching data from external sources, performing computations that
+	// do not need to be stored on the blockchain, and sending transactions.
+	//
+	// Offchain workers are executed by a node's offchain worker pool, which is responsible
+	// for managing the workers and executing their tasks. Each offchain worker has access
+	// to the node's local state and can use it to execute its task.
+	//
+	// Some common use cases for offchain workers include:
+	//
+	// Fetching price data from external sources
+	// Performing computations on behalf of the node, such as encryption or decryption
+	// Submitting transactions to the network on behalf of the node
 	if config.offchain_worker.enabled {
 		sc_service::build_offchain_workers(
 			&config,
@@ -263,13 +427,28 @@ pub fn new_full(mut config: Configuration) -> Result<TaskManager, ServiceError> 
 		);
 	}
 
+	// specifies the role of the node, which can be one of "FULL", "LIGHT", "AUTHORITY", or "INFRASTRUCTURE".
 	let role = config.role.clone();
+	// specifies whether the node should force block authoring, which means that it will
+	// always try to produce blocks even if it is not an authority node.
 	let force_authoring = config.force_authoring;
+	// specifies the number of blocks the node should wait before attempting to produce
+	// another block, if it is an authority node.
 	let backoff_authoring_blocks: Option<()> = None;
+	// specifies the name of the node.
 	let name = config.network.node_name.clone();
+	// specifies whether Grandpa finality should be enabled.
 	let enable_grandpa = !config.disable_grandpa;
+	// specifies the Prometheus registry to use for metrics, if any.
 	let prometheus_registry = config.prometheus_registry().cloned();
 
+	// The closure is used to create a full RPC extension that includes all the necessary
+	// dependencies. The dependencies include a reference to the client and transaction pool,
+	// which are needed to handle RPC requests. The deny_unsafe argument is used to specify
+	// whether unsafe RPC methods should be denied.
+	//
+	// The rpc_extensions_builder is later used by the node to create and expose a set of
+	// custom RPC methods to clients that connect to the node.
 	let rpc_extensions_builder = {
 		let client = client.clone();
 		let pool = transaction_pool.clone();
@@ -281,21 +460,35 @@ pub fn new_full(mut config: Configuration) -> Result<TaskManager, ServiceError> 
 		})
 	};
 
+	// The spawn_tasks function in Substrate is responsible for spawning various background
+	// tasks that are necessary for the functioning of the node. These tasks include:
+	//
+	// Consensus engine: This is the main task responsible for validating and importing new blocks as they arrive.
+	// Transaction pool: This task is responsible for managing the pending transactions in the node's mempool.
+	// RPC server: This task runs the node's JSON-RPC API, which allows external clients to interact with the node.
+	// Keystore: This task is responsible for managing the node's key storage and signing transactions.
+	// Telemetry: This task reports telemetry data about the node's performance back to the Substrate network.
 	let _rpc_handlers = sc_service::spawn_tasks(sc_service::SpawnTasksParams {
 		network: network.clone(),
 		client: client.clone(),
 		keystore: keystore_container.sync_keystore(),
 		task_manager: &mut task_manager,
 		transaction_pool: transaction_pool.clone(),
+		// A closure that builds the RPC extensions for the node.
 		rpc_builder: rpc_extensions_builder,
 		backend,
+		// The transaction sender for the system.
 		system_rpc_tx,
+		// The transaction handler controller.
 		tx_handler_controller,
 		config,
 		telemetry: telemetry.as_mut(),
 	})?;
 
 	if role.is_authority() {
+		// the code initializes a ProposerFactory using sc_basic_authorship::ProposerFactory::new()
+		// function. The ProposerFactory is used to create a Proposer instance that is responsible
+		// for proposing new blocks to the network.
 		let proposer_factory = sc_basic_authorship::ProposerFactory::new(
 			task_manager.spawn_handle(),
 			client.clone(),
@@ -306,6 +499,27 @@ pub fn new_full(mut config: Configuration) -> Result<TaskManager, ServiceError> 
 
 		let slot_duration = sc_consensus_aura::slot_duration(&*client)?;
 
+		// This code starts the consensus engine for the Aura algorithm, which is used to produce
+		// blocks in a proof-of-authority (PoA) consensus network in Substrate.
+		//
+		// The function sc_consensus_aura::start_aura is called with various parameters,
+		// including slot_duration which defines the length of a single slot in the network,
+		// client which is the Substrate client, select_chain which selects the best chain to
+		// build on, block_import which imports and validates new blocks, and proposer_factory
+		// which creates instances of block proposers.
+		//
+		// The function also takes a closure that creates inherent data providers, which are used
+		// to provide some data that is required for a block to be valid. In this case, the
+		// closure creates an instance of sp_timestamp::InherentDataProvider and an instance of
+		// sp_consensus_aura::inherents::InherentDataProvider based on the current system time
+		// and the slot duration.
+		//
+		// Other parameters include force_authoring and backoff_authoring_blocks which control
+		// how often blocks are authored, keystore_container which holds the keys required for
+		// block authoring, and network which is the Substrate network protocol instance.
+		//
+		// The resulting aura object is the main entry point to the Aura consensus engine,
+		// and will be used to produce new blocks in the network.
 		let aura = sc_consensus_aura::start_aura::<AuraPair, _, _, _, _, _, _, _, _, _, _>(
 			StartAuraParams {
 				slot_duration,
@@ -338,6 +552,19 @@ pub fn new_full(mut config: Configuration) -> Result<TaskManager, ServiceError> 
 
 		// the AURA authoring task is considered essential, i.e. if it
 		// fails we take down the service with it.
+
+		// This code spawns a new blocking task using the task_manager to run the Aura
+		// block authoring algorithm.
+		//
+		// The aura variable is a result of calling the sc_consensus_aura::start_aura()
+		// function which creates an instance of the Aura block authoring algorithm with the given parameters.
+		//
+		// The spawn_blocking() method is called on the task_manager to spawn the aura
+		// task in a new blocking thread. The first argument is a string identifier for the
+		// task, while the second argument is an optional string to give further context to the task.
+		//
+		// Overall, this code sets up and starts the Aura block authoring algorithm in a
+		// new thread managed by the task_manager.
 		task_manager
 			.spawn_essential_handle()
 			.spawn_blocking("aura", Some("block-authoring"), aura);
