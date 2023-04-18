@@ -587,13 +587,12 @@ impl pallet_grandpa::Config for Runtime {
     // In this case, the KeyOwnerProof type is defined in the context of a runtime that has a
     // KeyOwnerProofSystem implementation for the tuple (KeyTypeId, GrandpaId). This trait
     // provides a way to verify ownership of keys
-    type KeyOwnerProof =
-    <Self::KeyOwnerProofSystem as KeyOwnerProofSystem<(KeyTypeId, GrandpaId)>>::Proof;
+    type KeyOwnerProof = <Historical as KeyOwnerProofSystem<(KeyTypeId, GrandpaId)>>::Proof;
     // The identification of a key owner, used when reporting equivocations.
-    type KeyOwnerIdentification = <Self::KeyOwnerProofSystem as KeyOwnerProofSystem<(
+    /*type KeyOwnerIdentification = <Self::KeyOwnerProofSystem as KeyOwnerProofSystem<(
         KeyTypeId,
         GrandpaId,
-    )>>::IdentificationTuple;
+    )>>::IdentificationTuple;*/
 
     // The KeyOwnerProofSystem is a trait that defines the behavior of a key ownership proof
     // system, which is used to validate the authority set in the grandpa finality gadget. In
@@ -601,7 +600,7 @@ impl pallet_grandpa::Config for Runtime {
     // sp_session::OpaqueKeys type, which is a type alias for OpaqueMultiPhase.
     // If you want to customize the way key ownership proofs are handled, you can define a
     // custom type that implements the KeyOwnerProofSystem trait and use it in your runtime.
-    type KeyOwnerProofSystem = ();
+    //type KeyOwnerProofSystem = ();
 
     // The equivocation handling subsystem, defines methods to report an
     // offence (after the equivocation has been validated) and for submitting a
@@ -609,10 +608,15 @@ impl pallet_grandpa::Config for Runtime {
     // NOTE: when enabling equivocation handling (i.e. this type isn't set to
     // `()`) you must use this pallet's `ValidateUnsigned` in the runtime
     // definition.
-    type HandleEquivocation = ();
+    //type HandleEquivocation = ();
 
     type WeightInfo = ();
+
     type MaxAuthorities = ConstU32<32>;
+
+    type MaxSetIdSessionEntries = ();
+
+    type EquivocationReportSystem = ();
 }
 
 pub const EXISTENTIAL_DEPOSIT: u128 = 500;
@@ -742,7 +746,7 @@ impl pallet_sudo::Config for Runtime {
     type RuntimeCall = RuntimeCall;
 }
 
-impl pallet_randomness_collective_flip::Config for Runtime {}
+impl pallet_insecure_randomness_collective_flip::Config for Runtime {}
 
 /// The address format for describing accounts.
 /// Overall, this definition allows for the creation of a runtime address type that can be used to
@@ -826,13 +830,13 @@ construct_runtime!(
         // including account management, block and transaction handling, timestamping, and event tracking.
         // It is a critical module that is typically included in the construction of a Substrate runtime through the construct_runtime!() macro.
 		System: frame_system,
-        // pallet_randomness_collective_flip is a module in the Substrate blockchain development framework that provides
+        // pallet_insecure_randomness_collective_flip is a module in the Substrate blockchain development framework that provides
         // a way to generate random values in a decentralized and verifiable manner.
         // It is typically included in the construction of a Substrate runtime through the construct_runtime!() macro.
 
-		// Here are some of the key features provided by pallet_randomness_collective_flip:
+		// Here are some of the key features provided by pallet_insecure_randomness_collective_flip:
 
-		//    Secure random number generation: pallet_randomness_collective_flip uses a decentralized and verifiable method for
+		//    Secure random number generation: pallet_insecure_randomness_collective_flip uses a decentralized and verifiable method for
         //    generating secure random values. It does this by relying on a collective flip mechanism,
         //    which involves multiple validators on the network contributing random values and then combining them in a
         //    way that ensures the final result is truly random.
@@ -845,14 +849,14 @@ construct_runtime!(
         //    transparent and auditable. This means that anyone can verify that the random values were generated
         //    in a fair and unbiased manner, without the need to trust any individual validator.
 
-		//    Integration with other modules: pallet_randomness_collective_flip is designed to integrate with other modules in
+		//    Integration with other modules: pallet_insecure_randomness_collective_flip is designed to integrate with other modules in
         //    the Substrate runtime, such as pallet_session and pallet_aura, which rely on random values for their operation.
 
-		// In summary, pallet_randomness_collective_flip provides a decentralized and verifiable method for generating secure
+		// In summary, pallet_insecure_randomness_collective_flip provides a decentralized and verifiable method for generating secure
         // random values in a Substrate-based blockchain. It is typically included in the construction of a Substrate
         // runtime through the construct_runtime!() macro and can be used for various purposes, such as selecting validators,
         // shuffling data, and running probabilistic algorithms.
-		RandomnessCollectiveFlip: pallet_randomness_collective_flip,
+		RandomnessCollectiveFlip: pallet_insecure_randomness_collective_flip,
         // pallet_timestamp is a module in the Substrate blockchain development framework that provides functionality for
         // handling timestamps in a runtime module. It is typically included in the construction of
         // a Substrate runtime through the construct_runtime!() macro.
