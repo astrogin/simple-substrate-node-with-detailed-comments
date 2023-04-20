@@ -136,6 +136,8 @@ pub use sp_runtime::{
     impl_opaque_keys,
 };
 
+// use pallet_session::historical as session_historical;
+
 //Runtime version. This should not be thought of as classic Semver (major/minor/tiny). This triplet have
 // different semantics and mis-interpretation could cause problems. In particular:
 // bug fixes should result in an increment of spec_version and possibly authoring_version,
@@ -587,7 +589,7 @@ impl pallet_grandpa::Config for Runtime {
     // In this case, the KeyOwnerProof type is defined in the context of a runtime that has a
     // KeyOwnerProofSystem implementation for the tuple (KeyTypeId, GrandpaId). This trait
     // provides a way to verify ownership of keys
-    type KeyOwnerProof = <Historical as KeyOwnerProofSystem<(KeyTypeId, GrandpaId)>>::Proof;
+    type KeyOwnerProof = <() as KeyOwnerProofSystem<(KeyTypeId, GrandpaId)>>::Proof;
     // The identification of a key owner, used when reporting equivocations.
     /*type KeyOwnerIdentification = <Self::KeyOwnerProofSystem as KeyOwnerProofSystem<(
         KeyTypeId,
@@ -1007,7 +1009,7 @@ construct_runtime!(
         // It is typically included in the construction of a Substrate runtime through the construct_runtime!() macro and can be
         // used for various purposes, such as managing root access, controlling access to privileged functions, integrating with
         // other modules, and customizing access-related parameters.
-		Sudo: pallet_sudo
+		Sudo: pallet_sudo,
 	}
 );
 
@@ -1233,6 +1235,19 @@ impl_runtime_apis! {
 		}
 		// Both methods are implemented using the TransactionPayment pallet, which handles calculating the
 		// dispatch fee and transaction fee for extrinsics.
+
+
+        fn query_weight_to_fee(
+            weight: Weight
+        ) -> Balance {
+            TransactionPayment::weight_to_fee(weight)
+        }
+
+        fn query_length_to_fee(
+            length: u32
+        ) -> Balance {
+            TransactionPayment::length_to_fee(length)
+        }
 	}
 
 	// The TransactionPaymentCallApi trait defines two methods query_call_info and query_call_fee_details which
@@ -1252,5 +1267,17 @@ impl_runtime_apis! {
 		) -> pallet_transaction_payment::FeeDetails<Balance> {
 			TransactionPayment::query_call_fee_details(call, len)
 		}
+
+        fn query_weight_to_fee(
+            weight: Weight
+        ) -> Balance {
+            TransactionPayment::weight_to_fee(weight)
+        }
+
+        fn query_length_to_fee(
+            length: u32
+        ) -> Balance {
+            TransactionPayment::length_to_fee(length)
+        }
 	}
 }

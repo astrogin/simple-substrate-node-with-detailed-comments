@@ -4,9 +4,9 @@ use substrate_simple_runtime_with_comments::{self, opaque::Block, RuntimeApi};
 use sc_client_api::BlockBackend;
 use sc_consensus_aura::{ImportQueueParams, SlotProportion, StartAuraParams};
 pub use sc_executor::NativeElseWasmExecutor;
-use sc_finality_grandpa::SharedVoterState;
+use sc_consensus_grandpa::SharedVoterState;
 use sc_keystore::LocalKeystore;
-use sc_service::{error::Error as ServiceError, Configuration, TaskManager};
+use sc_service::{error::Error as ServiceError, Configuration, TaskManager, WarpSyncParams};
 use sc_telemetry::{Telemetry, TelemetryWorker};
 use sp_consensus_aura::sr25519::AuthorityPair as AuraPair;
 use std::{sync::Arc, time::Duration};
@@ -78,13 +78,13 @@ pub fn new_partial(
 		sc_consensus::DefaultImportQueue<Block, FullClient>,
 		sc_transaction_pool::FullPool<Block, FullClient>,
 		(
-			sc_finality_grandpa::GrandpaBlockImport<
+			sc_consensus_grandpa::GrandpaBlockImport<
 				FullBackend,
 				Block,
 				FullClient,
 				FullSelectChain,
 			>,
-			sc_finality_grandpa::LinkHalf<Block, FullClient, FullSelectChain>,
+			sc_consensus_grandpa::LinkHalf<Block, FullClient, FullSelectChain>,
 			Option<Telemetry>,
 		),
 	>,
@@ -229,10 +229,10 @@ pub fn new_partial(
 	// used for monitoring the Grandpa module's performance.
 	//
 	// The block_import function returns a tuple containing the grandpa_block_import and
-	// grandpa_link. The grandpa_block_import is an instance of sc_finality_grandpa::BlockImport,
+	// grandpa_link. The grandpa_block_import is an instance of sc_consensus_grandpa::BlockImport,
 	// which is responsible for importing and validating new blocks. The grandpa_link is an
-	// instance of sc_finality_grandpa::Link, which is used to interact with other Grandpa nodes on the network.
-	let (grandpa_block_import, grandpa_link) = sc_finality_grandpa::block_import(
+	// instance of sc_consensus_grandpa::Link, which is used to interact with other Grandpa nodes on the network.
+	let (grandpa_block_import, grandpa_link) = sc_consensus_grandpa::block_import(
 		client.clone(),
 		&(client.clone() as Arc<_>),
 		select_chain.clone(),
@@ -356,7 +356,7 @@ pub fn new_full(mut config: Configuration) -> Result<TaskManager, ServiceError> 
 	}
 	// The resulting grandpa_protocol_name is a human-readable string that represents the
 	// Grandpa protocol's name for the given chain. This name is used for reporting and logging purposes.
-	let grandpa_protocol_name = sc_finality_grandpa::protocol_standard_name(
+	let grandpa_protocol_name = sc_consensus_grandpa::protocol_standard_name(
 		&client.block_hash(0).ok().flatten().expect("Genesis block exists; qed"),
 		&config.chain_spec,
 	);
@@ -367,14 +367,14 @@ pub fn new_full(mut config: Configuration) -> Result<TaskManager, ServiceError> 
 	config
 		.network
 		.extra_sets
-		.push(sc_finality_grandpa::grandpa_peers_set_config(grandpa_protocol_name.clone()));
+		.push(sc_consensus_grandpa::grandpa_peers_set_config(grandpa_protocol_name.clone()));
 
 	// This code is creating a new NetworkProvider instance that will be used to provide the
 	// warp proof data to the grandpa finality module.
 	//
 	// The NetworkProvider will be wrapped in an Arc and used by the grandpa finality
 	// module to fetch warp proof data during the finality process.
-	let warp_sync = Arc::new(sc_finality_grandpa::warp_proof::NetworkProvider::new(
+	let warp_sync = Arc::new(sc_consensus_grandpa::warp_proof::NetworkProvider::new(
 		backend.clone(),
 		// grandpa_link.shared_authority_set().clone(): This is the shared authority set used by
 		// the grandpa finality module. It provides the network provider with access to the
@@ -389,7 +389,7 @@ pub fn new_full(mut config: Configuration) -> Result<TaskManager, ServiceError> 
 	// represents the P2P network, the system_rpc_tx object, which is used for sending
 	// system RPC messages, the tx_handler_controller, which is used to control the transaction
 	// handler, and the network_starter, which is a future that starts the network.
-	let (network, system_rpc_tx, tx_handler_controller, network_starter) =
+	let (network, system_rpc_tx, tx_handler_controller, network_starter, syncing_service) =
 		sc_service::build_network(sc_service::BuildNetworkParams {
 			config: &config,
 			client: client.clone(),
@@ -402,7 +402,7 @@ pub fn new_full(mut config: Configuration) -> Result<TaskManager, ServiceError> 
 			block_announce_validator_builder: None,
 			// The warp_sync field is an optional parameter for the network provider, which
 			// provides the ability to do fast syncing of the blockchain using GRANDPA finality proofs.
-			warp_sync: Some(warp_sync),
+			warp_sync_params: Some(WarpSyncParams::WithProvider(warp_sync)),
 		})?;
 
 	// offchain workers are used to perform tasks off the blockchain network. They can be used
@@ -483,6 +483,7 @@ pub fn new_full(mut config: Configuration) -> Result<TaskManager, ServiceError> 
 		tx_handler_controller,
 		config,
 		telemetry: telemetry.as_mut(),
+		sync_service: syncing_service
 	})?;
 
 	if role.is_authority() {
@@ -541,8 +542,8 @@ pub fn new_full(mut config: Configuration) -> Result<TaskManager, ServiceError> 
 				force_authoring,
 				backoff_authoring_blocks,
 				keystore: keystore_container.sync_keystore(),
-				sync_oracle: network.clone(),
-				justification_sync_link: network.clone(),
+				sync_oracle: syncing_service.clone(),
+				justification_sync_link: syncing_service.clone(),
 				block_proposal_slot_portion: SlotProportion::new(2f32 / 3f32),
 				max_block_proposal_slot_portion: None,
 				telemetry: telemetry.as_ref().map(|x| x.handle()),
@@ -576,7 +577,7 @@ pub fn new_full(mut config: Configuration) -> Result<TaskManager, ServiceError> 
 		let keystore =
 			if role.is_authority() { Some(keystore_container.sync_keystore()) } else { None };
 
-		let grandpa_config = sc_finality_grandpa::Config {
+		let grandpa_config = sc_consensus_grandpa::Config {
 			// FIXME #1578 make this available through chainspec
 			gossip_duration: Duration::from_millis(333),
 			justification_period: 512,
@@ -594,11 +595,11 @@ pub fn new_full(mut config: Configuration) -> Result<TaskManager, ServiceError> 
 		// and vote data availability than the observer. The observer has not
 		// been tested extensively yet and having most nodes in a network run it
 		// could lead to finality stalls.
-		let grandpa_config = sc_finality_grandpa::GrandpaParams {
+		let grandpa_config = sc_consensus_grandpa::GrandpaParams {
 			config: grandpa_config,
 			link: grandpa_link,
 			network,
-			voting_rule: sc_finality_grandpa::VotingRulesBuilder::default().build(),
+			voting_rule: sc_consensus_grandpa::VotingRulesBuilder::default().build(),
 			prometheus_registry,
 			shared_voter_state: SharedVoterState::empty(),
 			telemetry: telemetry.as_ref().map(|x| x.handle()),
