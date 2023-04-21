@@ -483,7 +483,7 @@ pub fn new_full(mut config: Configuration) -> Result<TaskManager, ServiceError> 
 		tx_handler_controller,
 		config,
 		telemetry: telemetry.as_mut(),
-		sync_service: syncing_service
+		sync_service: syncing_service.clone()
 	})?;
 
 	if role.is_authority() {
@@ -603,6 +603,7 @@ pub fn new_full(mut config: Configuration) -> Result<TaskManager, ServiceError> 
 			prometheus_registry,
 			shared_voter_state: SharedVoterState::empty(),
 			telemetry: telemetry.as_ref().map(|x| x.handle()),
+			sync: syncing_service
 		};
 
 		// the GRANDPA voter task is considered infallible, i.e.
@@ -610,7 +611,7 @@ pub fn new_full(mut config: Configuration) -> Result<TaskManager, ServiceError> 
 		task_manager.spawn_essential_handle().spawn_blocking(
 			"grandpa-voter",
 			None,
-			sc_finality_grandpa::run_grandpa_voter(grandpa_config)?,
+			sc_consensus_grandpa::run_grandpa_voter(grandpa_config)?,
 		);
 	}
 
